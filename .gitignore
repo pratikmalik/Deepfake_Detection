@@ -1,0 +1,35 @@
+# Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases
+instance/
+*.db
+*.sqlite3
+
+# Uploaded Files & Temporary Processing Output
+Uploaded_Files/*
+!Uploaded_Files/.gitkeep
+
+# Generated Frame Outputs & Heatmaps
+frontend/static/frames/*
+!frontend/static/frames/.gitkeep
+frontend/static/heatmaps/*
+!frontend/static/heatmaps/.gitkeep
+frontend/static/debug_crops/*
+!frontend/static/debug_crops/.gitkeep
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
