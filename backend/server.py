@@ -1100,14 +1100,27 @@ def predict_image(image_path):
 
 
 
+@app.after_request
+def add_cache_control_headers(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 @app.route('/image-detect', methods=['GET', 'POST'])
 def image_detect():
     if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json
+        
         if 'image' not in request.files:
+            if is_ajax:
+                return jsonify({'error': "No image file uploaded"}), 400
             return render_template('image.html', error="No image file uploaded")
         
         image = request.files['image']
         if image.filename == '':
+            if is_ajax:
+                return jsonify({'error': "No image file selected"}), 400
             return render_template('image.html', error="No image file selected")
         
         filename = secure_filename(image.filename)
@@ -1116,12 +1129,21 @@ def image_detect():
         
         prediction, confidence = predict_image(image_path)
         
+        if os.path.exists(image_path):
+            os.remove(image_path)
+            
         if prediction is None:
+            if is_ajax:
+                return jsonify({'error': "Error processing image"}), 500
             return render_template('image.html', error="Error processing image")
         
         output = "FAKE" if prediction == 0 else "REAL"
-        os.remove(image_path)
-        return render_template('image.html', output=output, confidence=confidence)
+        conf_val = round(float(confidence), 2)
+        
+        if is_ajax:
+            return jsonify({'output': output, 'confidence': conf_val})
+            
+        return render_template('image.html', output=output, confidence=conf_val)
     
     return render_template('image.html')
 

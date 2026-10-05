@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <title>DeepFake Detection</title>
+    <title>DeepFake Detection - Image Analysis</title>
     <style>
         body {
             margin: 0;
@@ -54,16 +54,9 @@
             color: #00f2ff;
         }
 
-        .nav-link.highlight {
-            background: #00f2ff;
-            color: #0a091b;
-            font-weight: 600;
-            padding: 0.7rem 1.5rem;
-            border-radius: 8px;
-        }
-
-        .nav-link.highlight:hover {
-            background: #00c2cc;
+        .nav-link.active {
+            background: rgba(0, 242, 255, 0.2);
+            color: #00f2ff;
         }
 
         .container {
@@ -89,19 +82,6 @@
             margin-top: 20px;
         }
 
-        .upload-box {
-            border: 2px dashed #00f2ff;
-            padding: 20px;
-            width: 100%;
-            border-radius: 10px;
-            cursor: pointer;
-            margin-bottom: 20px;
-        }
-
-        .upload-box input {
-            display: none;
-        }
-
         .btn {
             background-color: #00f2ff;
             color: black;
@@ -118,9 +98,44 @@
             background-color: #00c2cc;
         }
 
+        .btn:disabled {
+            background-color: #555555;
+            color: #888888;
+            cursor: not-allowed;
+        }
+
         .result {
-            margin-top: 15px;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background: #12122c;
             font-size: 1.2rem;
+        }
+
+        .result.fake {
+            border: 2px solid #ff4d4d;
+            color: #ff4d4d;
+        }
+
+        .result.real {
+            border: 2px solid #00f2ff;
+            color: #00f2ff;
+        }
+
+        .spinner {
+            display: none;
+            margin: 20px auto;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #00f2ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .footer {
@@ -152,23 +167,28 @@
     <div class="container">
         <h2>Upload an Image</h2>
         <div class="form-container">
-            <form action="/image-detect" method="post" enctype="multipart/form-data">
+            <form id="imageForm" action="/image-detect" method="post" enctype="multipart/form-data">
                 <input type="file" id="fileUpload" style="margin: 20px;" name="image" accept="image/*" required
                     onchange="previewImage(event)"><br>
-                <img id="preview" class="image-preview" style="width: 100px; margin: auto;">
+                <img id="preview" class="image-preview" style="width: 150px; display: none; margin: 15px auto; border-radius: 8px;">
                 <br>
-                <button class="btn" type="submit">Detect</button>
+                <button class="btn" id="submitBtn" type="submit">Detect Image</button>
             </form>
 
-            {% if output %}
-            <div class="result">
-                <p>Prediction: <strong>{{ output }}</strong></p>
-                <p>Confidence: <strong>{{ confidence }}%</strong></p>
+            <div class="spinner" id="spinner"></div>
+            <div id="statusText" style="margin-top: 10px; color: #8892b0;"></div>
+
+            <div id="resultContainer">
+                {% if output %}
+                <div class="result {{ output|lower }}">
+                    <p>Prediction: <strong>{{ output }}</strong></p>
+                    <p>Confidence: <strong>{{ confidence }}%</strong></p>
+                </div>
+                {% endif %}
+                {% if error %}
+                <p style="color: #ff4d4d; margin-top: 15px;">{{ error }}</p>
+                {% endif %}
             </div>
-            {% endif %}
-            {% if error %}
-            <p class="error">{{ error }}</p>
-            {% endif %}
         </div>
     </div>
 
@@ -189,9 +209,56 @@
                 reader.readAsDataURL(file);
             }
         }
+
+        document.getElementById('imageForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileUpload');
+            if (!fileInput.files || fileInput.files.length === 0) return;
+
+            const formData = new FormData(this);
+            const submitBtn = document.getElementById('submitBtn');
+            const spinner = document.getElementById('spinner');
+            const statusText = document.getElementById('statusText');
+            const resultContainer = document.getElementById('resultContainer');
+
+            submitBtn.disabled = true;
+            spinner.style.display = 'block';
+            statusText.innerText = 'Analyzing image with AI model... Please wait.';
+            resultContainer.innerHTML = '';
+
+            fetch('/image-detect', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                submitBtn.disabled = false;
+                spinner.style.display = 'none';
+                statusText.innerText = '';
+
+                if (data.error) {
+                    resultContainer.innerHTML = `<p style="color: #ff4d4d; margin-top: 15px;">${data.error}</p>`;
+                } else {
+                    const resultClass = data.output.toLowerCase();
+                    resultContainer.innerHTML = `
+                        <div class="result ${resultClass}">
+                            <p>Prediction: <strong>${data.output}</strong></p>
+                            <p>Confidence: <strong>${data.confidence}%</strong></p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(err => {
+                submitBtn.disabled = false;
+                spinner.style.display = 'none';
+                statusText.innerText = '';
+                resultContainer.innerHTML = `<p style="color: #ff4d4d; margin-top: 15px;">Analysis failed. Please try again.</p>`;
+            });
+        });
     </script>
-
-
 
 </body>
 
