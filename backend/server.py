@@ -35,64 +35,50 @@ import logging
 logging.getLogger('mediapipe').setLevel(logging.ERROR)
 logging.getLogger('absl').setLevel(logging.ERROR)
 
-import torch
-import torchvision
-from torchvision import transforms
-from torch.utils.data import DataLoader
-from torch.utils.data.dataset import Dataset
-import numpy as np
-import cv2
-# Removed MediaPipe due to protobuf conflict
-# import mediapipe as mp
-from torch.autograd import Variable
 import time
 import uuid
 import sys
 import traceback
-from PIL import Image
-import requests
-from urllib.parse import urlparse
-import tempfile
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import seaborn as sns
+import logging
+import zipfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Face Detector (MTCNN with Haar Cascade fallback)
-try:
-    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
-        FACE_CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    else:
-        FACE_CASCADE_PATH = 'haarcascade_frontalface_default.xml'
-    if hasattr(cv2, 'CascadeClassifier'):
-        face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
-    else:
-        face_cascade = None
-except Exception as e:
-    logger.warning(f"Haar Cascade initialization skipped: {e}")
-    face_cascade = None
-detector = None
+# Lazy face detector getters
+_face_cascade = None
+_detector = None
 
-try:
-    from mtcnn import MTCNN
-    detector = MTCNN()
-    logger.info("MTCNN face detector loaded successfully.")
-except Exception as e:
-    logger.warning(f"MTCNN unavailable ({e}). Using OpenCV Haar Cascade fallback.")
-    detector = None
-import logging
-import zipfile
-from torch import nn
-import torch.nn.functional as F
-from torchvision import models as tv_models
-from torchvision.models import efficientnet_b0
-from skimage import img_as_ubyte
-import warnings
-warnings.filterwarnings("ignore")
+def get_face_cascade():
+    global _face_cascade
+    if _face_cascade is None:
+        try:
+            import cv2
+            if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+                FACE_CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            else:
+                FACE_CASCADE_PATH = 'haarcascade_frontalface_default.xml'
+            if hasattr(cv2, 'CascadeClassifier'):
+                _face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
+            else:
+                _face_cascade = False
+        except Exception as e:
+            logger.warning(f"Haar Cascade initialization skipped: {e}")
+            _face_cascade = False
+    return _face_cascade if _face_cascade is not False else None
+
+def get_detector():
+    global _detector
+    if _detector is None:
+        try:
+            from mtcnn import MTCNN
+            _detector = MTCNN()
+            logger.info("MTCNN face detector loaded successfully.")
+        except Exception as e:
+            logger.warning(f"MTCNN unavailable ({e}). Using OpenCV Haar Cascade fallback.")
+            _detector = False
+    return _detector if _detector is not False else None
 # Remove matplotlib imports since we're not generating graphs
 # import matplotlib.pyplot as plt
 # import matplotlib
@@ -145,30 +131,32 @@ def crop_face_from_frame(frame_image):
     Returns the cropped PIL Image (resized to 224x224) or None if no face found.
     """
     try:
+        import numpy as np
+        import cv2
+        from PIL import Image
+
         # Convert PIL to cv2 input (BGR)
         open_cv_image = np.array(frame_image) 
         # Convert RGB to BGR
         open_cv_image = open_cv_image[:, :, ::-1].copy()
         
-        if detector:
+        det = get_detector()
+        if det:
             # MTCNN Detection
-            # detect_faces expects RGB image
-            faces = detector.detect_faces(np.array(frame_image))
+            faces = det.detect_faces(np.array(frame_image))
             
             if not faces:
                 return None
                 
-            # Get largest face (highest confidence * box area)
-            # MTCNN returns dict with 'box': [x, y, width, height]
             largest_face = max(faces, key=lambda f: f['box'][2] * f['box'][3])
             x, y, w, h = largest_face['box']
-            
-            # Fix negative coordinates
             x, y = max(0, x), max(0, y)
         else:
-            # Legacy Haar Cascade Detection
+            cascade = get_face_cascade()
+            if not cascade:
+                return None
             gray = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(
+            faces = cascade.detectMultiScale(
                 gray,
                 scaleFactor=1.1,
                 minNeighbors=5,
@@ -222,6 +210,7 @@ def predict_video_xception(video_path):
     logger.info(f"Starting Xception video analysis for: {video_path}")
     
     try:
+        import numpy as np
         model = get_video_model_h5()
         
         # Extract 15 frames for fast and reliable analysis
@@ -275,11 +264,13 @@ def predict_video_xception(video_path):
         
         processing_time = time.time() - start_time
         
+        gc.collect()
         return [prediction_label, confidence, heatmap_url, frame_paths], processing_time
         
     except Exception as e:
         logger.error(f"Error in Xception prediction: {e}")
         traceback.print_exc()
+        gc.collect()
         raise
 
 
@@ -385,6 +376,8 @@ def logout():
     logout_user()
     return redirect(url_for('homepage'))
 
+from torch import nn
+
 class Model(nn.Module):
     def __init__(self, num_classes, latent_dim=2048, lstm_layers=1, hidden_dim=2048, bidirectional=False):
         super(Model, self).__init__()
@@ -479,6 +472,8 @@ def predict(model, img, path='./'):
         traceback.print_exc()
         raise
 
+from torch.utils.data import Dataset
+
 class validation_dataset(Dataset):
     def __init__(self, video_names, sequence_length=60, transform=None):
         self.video_names = video_names
@@ -562,6 +557,9 @@ def get_efficientnet_model():
     
     if _efficientnet_model is None:
         try:
+            import torch
+            from torchvision.models import efficientnet_b0
+            from torchvision import transforms
             logger.info(f"Loading EfficientNet-B0 model from: {EFFICIENTNET_MODEL_PATH}")
             
             if not os.path.exists(EFFICIENTNET_MODEL_PATH):
@@ -700,6 +698,12 @@ def generate_efficientnet_heatmap(per_frame_probs, filename):
     Generate temporal heatmap from per-frame fake probabilities.
     """
     try:
+        import numpy as np
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
         probs = np.array(per_frame_probs)
         num_frames = len(probs)
         
@@ -992,6 +996,9 @@ def terms():
     return render_template('terms.html')
 
 # ✅ Define DFModel before loading state dict
+import torch
+from torchvision import models as tv_models
+
 class DFModel(torch.nn.Module):
     def __init__(self, num_classes=2, latent_dim=2048, lstm_layers=1, hidden_dim=2048, bidirectional=False):
         super(DFModel, self).__init__()
@@ -1062,6 +1069,8 @@ def get_model():
 def predict_image(image_path):
     """Predict if image is fake using EfficientNet-B0 model"""
     try:
+        import torch
+        from PIL import Image
         model, transform = get_efficientnet_model()
         image = Image.open(image_path).convert("RGB")
         input_tensor = transform(image).unsqueeze(0)
@@ -1080,10 +1089,12 @@ def predict_image(image_path):
             else:  # EfficientNet says Real
                 our_prediction = 1  # Our REAL
             
+            gc.collect()
             return our_prediction, confidence
     except Exception as e:
         logger.error(f"Error processing image: {str(e)}")
         traceback.print_exc()
+        gc.collect()
         return None, None
 
 
