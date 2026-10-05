@@ -1,14 +1,19 @@
 import os
+import gc
 
-# --- Environment Configuration (MUST BE FIRST) ---
-# Removed TF_USE_LEGACY_KERAS to fix RecursionError with TF 2.20 + Keras 3
+# --- Environment Configuration (MUST BE FIRST FOR LOW-MEMORY DEPLOYMENT) ---
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 os.environ['MEDIAPIPE_DISABLE_GPU']='1'
-os.environ['GLOG_minloglevel'] ='3'  # 3 = FATAL only
+os.environ['GLOG_minloglevel'] ='3'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['MALLOC_TRIM_THRESHOLD_'] = '65536'
 
 from flask import Flask, render_template, redirect, request, url_for, send_file, send_from_directory, flash
 from flask import jsonify, json
