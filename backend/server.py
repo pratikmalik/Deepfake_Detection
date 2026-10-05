@@ -15,7 +15,10 @@ from flask import jsonify, json
 from werkzeug.utils import secure_filename
 import datetime
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User
+try:
+    from backend.models import db, User
+except ImportError:
+    from models import db, User
 
 # Suppress MediaPipe GPU warnings
 import logging
