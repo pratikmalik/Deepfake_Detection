@@ -58,8 +58,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Face Detector (MTCNN with Haar Cascade fallback)
-FACE_CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
+try:
+    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+        FACE_CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    else:
+        FACE_CASCADE_PATH = 'haarcascade_frontalface_default.xml'
+    if hasattr(cv2, 'CascadeClassifier'):
+        face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
+    else:
+        face_cascade = None
+except Exception as e:
+    logger.warning(f"Haar Cascade initialization skipped: {e}")
+    face_cascade = None
 detector = None
 
 try:
